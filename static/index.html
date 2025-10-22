@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mini Local Plex (Temp Path List)</title>
+  <style>
+    body{background:#0f1115;color:#e5e7eb;font-family:system-ui,sans-serif;margin:1rem}
+    input{width:100%;padding:.6rem;background:#0b0d12;color:#e5e7eb;border:1px solid #374151;border-radius:.5rem}
+    button{margin-top:.5rem;padding:.5rem 1rem;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:.5rem;cursor:pointer}
+    button:hover{background:#111827}
+    ul{list-style:none;padding-left:0}
+    li{padding:.3rem 0;cursor:pointer}
+    li:hover{text-decoration:underline}
+    .muted{color:#9ca3af}
+    video,audio{width:100%;max-height:70vh;margin-top:1rem;background:#000}
+  </style>
+</head>
+<body>
+  <h2>Mini Local Plex</h2>
+  <p class="muted">Paste an <strong>absolute</strong> path under your allowed media folders, then click it to play.</p>
+
+  <input id="abs" placeholder="e.g. C:\\Users\\You\\Videos\\clip.mp4 or /home/you/Videos/clip.mp4" />
+  <button onclick="registerPath()">Register Path</button>
+
+  <h3>Registered Files</h3>
+  <ul id="list"><li class="muted">(none)</li></ul>
+
+  <video id="v" controls style="display:none"></video>
+  <audio id="a" controls style="display:none"></audio>
+
+<script>
+async function registerPath(){
+  const p = document.getElementById('abs').value.trim();
+  if(!p) return;
+  const res = await fetch('/api/register_path?path='+encodeURIComponent(p), {method:'POST'});
+  if(!res.ok){
+    const msg = await res.text();
+    alert('Register failed: '+msg);
+  }
+  document.getElementById('abs').value='';
+  refreshList();
+}
+
+async function refreshList(){
+  const res = await fetch('/api/list_paths');
+  if(!res.ok){ return; }
+  const data = await res.json();
+  const ul = document.getElementById('list');
+  if(data.length===0){
+    ul.innerHTML = '<li class="muted">(none)</li>';
+    return;
+  }
+  ul.innerHTML = data.map((p,i)=>`<li onclick="play(${i})">[${i}] ${p}</li>`).join('');
+}
+
+function play(i){
+  const v = document.getElementById('v');
+  const a = document.getElementById('a');
+  v.pause(); a.pause();
+  v.style.display='none'; a.style.display='none';
+
+  // Ask backend what the path is so we can branch by extension
+  fetch('/api/list_paths').then(r=>r.json()).then(list=>{
+    const path = list[i] || '';
+    const lower = path.toLowerCase();
+
+    const audioExts = ['.mp3','.flac','.wav','.aac','.m4a','.ogg'];
+    const isAudio = audioExts.some(ext => lower.endsWith(ext));
+    const isKnownVideo = ['.mp4','.m4v','.webm','.ogv'].some(ext => lower.endsWith(ext));
+    const isWMV = lower.endsWith('.wmv');
+
+    let url;
+    if (isAudio) {
+      url = '/api/stream_by_index/'+i;
+      a.src = url; a.style.display=''; a.play();
+    } else if (isKnownVideo) {
+      url = '/api/stream_by_index/'+i;
+      v.src = url; v.style.display=''; v.play();
+    } else if (isWMV) {
+      // Fallback to live transcode for WMV
+      url = '/api/transcode_by_index/'+i;
+      v.src = url; v.style.display=''; v.play();
+    } else {
+      // Default try native stream; if it errors, suggest converting
+      url = '/api/stream_by_index/'+i;
+      v.src = url; v.style.display='';
+      v.play().catch(()=>{
+        alert('This format is not supported by your browser. Convert to MP4 or use the transcode endpoint.');
+      });
+    }
+  });
+}
+
+refreshList();
+</script>
+</body>
+</html>

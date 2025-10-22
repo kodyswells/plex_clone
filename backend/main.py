@@ -1,8 +1,37 @@
-import fastapi
-from fastapi.middleware.cors import CORSMiddleware
+# backend/main.py
+# -----------------------------------------------------------------------------
+# This file ONLY wires the app together:
+#  - creates the FastAPI app
+#  - includes routers from backend/routers/*
+#  - serves the static index.html
+# No business logic lives here.
+# -----------------------------------------------------------------------------
 
-app = fastapi.FastAPI(title="FastAPI Plex Clone")
+from pathlib import Path
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, RedirectResponse
+from starlette.staticfiles import StaticFiles
 
-@app.get("/", tags=["meta"])
-async def root():
-    return {"message": "fastapi server is running"}
+# Import routers (the logic) from the routers package
+from .routers import media_router
+
+app = FastAPI(title="Mini Local Plex")
+
+# --- Static files (serve /static and / -> index.html) -------------------------
+BASE_DIR = Path(__file__).resolve().parents[1]     # project/
+STATIC_DIR = BASE_DIR / "static"
+
+# /static/* will serve files from the static directory
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# GET /  -> /static/index.html
+@app.get("/", include_in_schema=False)
+def root():
+    index = STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(index)
+    return RedirectResponse(url="/docs")  # fallback if index.html missing
+
+# --- Routers (ALL app logic lives under backend/routers) ----------------------
+# We use a common prefix /api so the frontend can call /api/...
+app.include_router(media_router, prefix="/api")
