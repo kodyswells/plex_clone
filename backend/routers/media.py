@@ -7,7 +7,7 @@ from typing import List
 router = APIRouter(tags=["media"])
 
 ALLOWED_DIRECTORIES = [
-    Path("/home/kody/media") # This is my media directory on the linux server. Will let users change it later with sqlite.
+    Path("/home/kody/media") # This is my media directory on the linux server. Will let users change it later with sqlite. This is just for testing.
 ]
 
 MAX_INDEXES = 50_0000  # Arbitrary limit to prevent abuse
@@ -43,9 +43,16 @@ def startup_event():
             raise RuntimeError(f"Allowed directory does not exist or is not a directory: {directory}")
 
         # Run helper function to check if the directory contains any media file before scanning.
-        _contains_media_files(directory)
+        if _contains_media_files(directory):
+            directory_file_count = 0
 
-        # Scan the directory for media files
-        for item in directory.rglob('*'):
-            if item.is_file() and item.suffix.lower() in MEDIA_EXTENSIONS:
-                file_list.append(item)
+            # Scan the directory for media files. Using rglob to include subdirectories.
+            for item in directory.rglob('*'):
+                # Check to see if we have reached max indexes
+                if len(file_list) >= MAX_INDEXES:
+                    break
+                #If not, check if the item is a file with a valid media extension and size > 0 bytes.
+                elif item.is_file() and item.suffix.lower() in MEDIA_EXTENSIONS and item.stat().st_size > 0:
+                    directory_file_count += 1
+                    file_list.append(item)
+            print(f"Indexed {directory_file_count} media files from {directory}")
