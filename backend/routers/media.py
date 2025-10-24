@@ -2,11 +2,11 @@
 # -----------------------------------------------------------------------------
 # Media router:
 #   - Startup scan of ALLOWED_DIRECTORIES for playable media
-#   - List indexed paths            GET    /api/media/path/list
-#   - Debug stat                    GET    /api/media/debug/stat?path=...
-#   - Direct stream with Range      GET    /api/media/stream?path=...
-#   - Live transcode (H.264/AAC)    GET    /api/media/transcode?path=...
-#   - Auto-pick stream/transcode    GET    /api/media/auto?path=...
+#   - List indexed paths            GET    /media/path/list
+#   - Debug stat                    GET    /media/debug/stat?path=...
+#   - Direct stream with Range      GET    /media/stream?path=...
+#   - Live transcode (H.264/AAC)    GET    /media/transcode?path=...
+#   - Auto-pick stream/transcode    GET    /media/auto?path=...
 #
 # Notes:
 # - We never upload content; we only read local filesystem paths.
@@ -29,9 +29,19 @@ from typing import Iterator, List, Optional, Tuple
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 router = APIRouter(tags=["media"])
+
+LOCK = threading.Lock()
+
+# Transcoding settings to start with. Will allowe the user to alter these settings with a post command. Will be stored in DB later.
+transcode_settings = {
+    "height": 720,
+    "v_bitrate": "3000k",
+    "a_bitrate": "128k",
+    "prefer_encoder": None, # e.g., "nvenc"
+}
 
 # --- Configuration ------------------------------------------------------------
 
@@ -395,9 +405,9 @@ def stream_file(path: str, request: Request):
 def transcode_to_mp4(
     request: Request,
     path: str,
-    height: int | None = 720,
-    v_bitrate: str = "3000k",
-    a_bitrate: str = "128k",
+    height: int = transcode_settings["height"],
+    v_bitrate: str = transcode_settings["v_bitrate"],
+    a_bitrate: str = transcode_settings["a_bitrate"],
     start: float | None = None,
     prefer_encoder: str | None = None,  # e.g., "nvenc"
 ):
@@ -476,7 +486,7 @@ def transcode_to_mp4(
 def auto_play(request: Request, path: str):
     """
     If the source is browser-native (MP4/H.264/AAC), redirect to /media/stream.
-    Otherwise, redirect to /media/transcode with sensible defaults.
+    Otherwise, redirect to /media/transcode with current transcoding settings.
     """
     raw_path = Path(path)
     if not raw_path.exists():
@@ -485,14 +495,72 @@ def auto_play(request: Request, path: str):
         raise HTTPException(status_code=403, detail="Access to this path is not allowed")
 
     file_path = _safe_resolve(raw_path)
-    qp = quote(str(file_path))
     try:
         if _is_browser_native_playable(file_path):
-            return RedirectResponse(url=f"/api/media/stream?path={qp}")
+            return RedirectResponse(url=f"/api/media/stream?{urlencode({'path': str(file_path)})}")
         else:
-            return RedirectResponse(url=f"/api/media/transcode?path={qp}&height=720&v_bitrate=3000k&a_bitrate=128k")
+            with LOCK:
+                current_settings = transcode_settings.copy()
+            qp = {
+                "path": str(file_path),
+                "height": current_settings["height"],
+                "v_bitrate": current_settings["v_bitrate"],
+                "a_bitrate": current_settings["a_bitrate"]
+            }
+            if current_settings.get("prefer_encoder"):
+                qp["prefer_encoder"] = current_settings["prefer_encoder"]
+            return RedirectResponse(url=f"/api/media/transcode?{urlencode(qp)}")
     except HTTPException as e:
         # If probing fails (415), just transcode
         if e.status_code == 415:
-            return RedirectResponse(url=f"/api/media/transcode?path={qp}&height=720&v_bitrate=3000k&a_bitrate=128k")
+            with LOCK:
+                current_settings = transcode_settings.copy()
+            qp = {
+                "path": str(file_path),
+                "height": current_settings["height"],
+                "v_bitrate": current_settings["v_bitrate"],
+                "a_bitrate": current_settings["a_bitrate"]
+            }
+            if current_settings.get("prefer_encoder"):
+                qp["prefer_encoder"] = current_settings["prefer_encoder"]
+            return RedirectResponse(url=f"/api/media/transcode?{urlencode(qp)}")
         raise
+
+@router.post("/media/transcode/configure")
+def configure_transcode_settings(height: int):
+    """
+    Post endpoint to configure the transcoding settings. Things like bitrate, resolution, and encoder preferences
+    Uses the lock to ensure thread safety.
+    360p: 1000k video, 96k audio
+    720p: 3000k video, 128k audio
+    1080p: 5000k video, 192k audio
+    """
+    with LOCK:
+        if height not in (360, 720, 1080):
+            raise HTTPException(status_code=400, detail="Unsupported height. Supported heights are 360, 720, and 1080")
+
+        transcode_settings["height"] = height
+        if height == 360:
+            transcode_settings["v_bitrate"] = "1000k"
+            transcode_settings["a_bitrate"] = "96k"
+        elif height == 720:
+            transcode_settings["v_bitrate"] = "3000k"
+            transcode_settings["a_bitrate"] = "128k"
+        elif height == 1080:
+            transcode_settings["v_bitrate"] = "5000k"
+            transcode_settings["a_bitrate"] = "192k"
+    
+    return {"status": "success", "transcode_settings": transcode_settings}
+
+
+
+# --- Test endpoints ----------------------------------------------------------------
+
+
+@router.get("/media/transcode/settings")
+def get_transcode_settings():
+    """
+    Get the current transcoding settings.
+    """
+    with LOCK:
+        return transcode_settings
