@@ -532,17 +532,21 @@ def configure_transcode_settings(height: int):
     Post endpoint to configure the transcoding settings. Things like bitrate, resolution, and encoder preferences
     Uses the lock to ensure thread safety.
     360p: 1000k video, 96k audio
+    480p : 1500k video, 112k audio
     720p: 3000k video, 128k audio
     1080p: 5000k video, 192k audio
     """
     with LOCK:
-        if height not in (360, 720, 1080):
-            raise HTTPException(status_code=400, detail="Unsupported height. Supported heights are 360, 720, and 1080")
+        if height not in (360, 480, 720, 1080):
+            raise HTTPException(status_code=400, detail="Unsupported height. Supported heights are 360, 480, 720, and 1080")
 
         transcode_settings["height"] = height
         if height == 360:
             transcode_settings["v_bitrate"] = "1000k"
             transcode_settings["a_bitrate"] = "96k"
+        elif height == 480:
+            transcode_settings["v_bitrate"] = "1500k"
+            transcode_settings["a_bitrate"] = "112k"
         elif height == 720:
             transcode_settings["v_bitrate"] = "3000k"
             transcode_settings["a_bitrate"] = "128k"
