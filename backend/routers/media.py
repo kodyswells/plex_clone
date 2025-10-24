@@ -45,6 +45,8 @@ transcode_settings = {
 
 # --- Configuration ------------------------------------------------------------
 
+hardware_acceleration = False # Disable hardware acceleration by default
+
 ALLOWED_DIRECTORIES: List[Path] = [
     Path("/home/kody/media"),  # adjust as needed; later make user-configurable via DB
 ]
@@ -226,7 +228,7 @@ def _pick_encoder(prefer: Optional[str] = None) -> str:
         encoders_out = subprocess.check_output(["ffmpeg", "-hide_banner", "-encoders"], stderr=subprocess.STDOUT).decode(
             "utf-8", errors="ignore"
         ).lower()
-        if "h264_nvenc" in encoders_out and _nvenc_runtime_ok():
+        if "h264_nvenc" in encoders_out and _nvenc_runtime_ok() and hardware_acceleration == True:
             return "h264_nvenc"
     except Exception:
         pass
@@ -556,6 +558,15 @@ def configure_transcode_settings(height: int):
     
     return {"status": "success", "transcode_settings": transcode_settings}
 
+@router.post("/media/transcode/hardware_acceleration")
+def set_hardware_acceleration(enabled: bool):
+    """
+    Enable or disable hardware acceleration for transcoding.
+    """
+    with LOCK:
+        global hardware_acceleration
+        hardware_acceleration = enabled
+        return {"status": "success", "hardware_acceleration": hardware_acceleration}
 
 
 # --- Test endpoints ----------------------------------------------------------------
