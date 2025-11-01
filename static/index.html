@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Mini Local Plex – Test Player</title>
+  <title>Mini Local Plex – Test Player (DB)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#0f1115; --panel:#161a22; --text:#e7eaf1; --muted:#9aa3b2; --accent:#5aa9ff; }
     html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif; }
     header { padding:16px 20px; background:var(--panel); border-bottom:1px solid #222832; }
     header h1 { margin:0; font-size:18px; letter-spacing:.2px; }
-    main { display:grid; grid-template-columns: 340px 1fr; gap:16px; padding:16px; height:calc(100% - 57px); box-sizing:border-box; }
+    main { display:grid; grid-template-columns: 380px 1fr; gap:16px; padding:16px; height:calc(100% - 57px); box-sizing:border-box; }
     .card { background:var(--panel); border:1px solid #222832; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
     .card header { background:transparent; border:none; padding:12px 14px; }
     .card .content { padding:12px 14px; overflow:auto; }
-    input[type="text"], input[type="number"], select {
+    input[type="text"], input[type="number"]{
       width:100%; box-sizing:border-box; background:#0c0f14; color:var(--text);
       border:1px solid #202632; padding:9px 10px; border-radius:8px; outline:none;
     }
@@ -25,10 +25,12 @@
     button:hover { transform:translateY(-1px); }
     .row { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
     .col { flex:1; }
-    .list { height:380px; overflow:auto; border:1px solid #202632; border-radius:8px; }
+    .list { height:420px; overflow:auto; border:1px solid #202632; border-radius:8px; }
     .item { padding:10px 12px; border-bottom:1px solid #202632; cursor:pointer; }
     .item:hover { background:#10141c; }
     .item.active { background:#0d1a28; border-left:3px solid var(--accent); padding-left:9px; }
+    .name { font-weight:600; }
+    .path { color:var(--muted); font-size:12px; margin-top:2px; word-break:break-all; }
     video { width:100%; max-height:70vh; background:#000; border-radius:12px; border:1px solid #222832; }
     .muted { color:var(--muted); font-size:12px; }
     .urlbar { font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; }
@@ -36,11 +38,12 @@
     .controls button { flex:0 0 auto; }
     .pill { background:#0c0f14; border:1px solid #202632; padding:6px 8px; border-radius:999px; font-size:12px; color:var(--muted); }
     footer { padding:8px 14px; border-top:1px solid #222832; background:#0d1118; font-size:12px; color:var(--muted); }
+    .hint { font-size:11px; color:var(--muted); }
   </style>
 </head>
 <body>
   <header>
-    <h1>Mini Local Plex – Test Player</h1>
+    <h1>Mini Local Plex – Test Player (DB)</h1>
   </header>
 
   <main>
@@ -49,16 +52,25 @@
       <header><strong>Library</strong></header>
       <div class="content">
         <div class="row">
-          <input id="filter" type="text" placeholder="Filter by filename…" />
+          <input id="filter" type="text" placeholder="Filter by name or path…" />
         </div>
-        <div id="list" class="list" role="listbox" aria-label="Media files"></div>
+
+        <div class="row">
+          <input id="dirInput" type="text" placeholder="Add allowed dir (e.g., /home/kody/media)" />
+          <button id="btnAddDir" title="POST /api/media/allowed-dirs">Add</button>
+          <button id="btnReload" title="Reload list">Reload</button>
+        </div>
+        <div class="hint" style="margin-bottom:8px">Adds to SQLite allowlist, lightly scans, and refreshes.</div>
+
+        <div id="list" class="list" role="listbox" aria-label="Media items"></div>
+
         <div class="row" style="margin-top:10px">
-          <span class="pill"><span id="count">0</span> files</span>
-          <span class="muted" style="margin-left:auto">Source: /api/media/path/list</span>
+          <span class="pill"><span id="count">0</span> items</span>
+          <span class="muted" style="margin-left:auto">Source: /api/media/item/list</span>
         </div>
       </div>
       <footer>
-        Tip: Click an item to select. Press <strong>Enter</strong> to play.
+        Tip: Click an item to select. Press <strong>Enter</strong> to play. IDs are used for playback.
       </footer>
     </section>
 
@@ -70,20 +82,22 @@
 
         <div class="row" style="margin-top:12px">
           <div class="col">
-            <label class="muted">Selected path</label>
+            <label class="muted">Selected item</label>
             <div id="selected" class="urlbar">—</div>
+            <div id="selectedPath" class="urlbar muted">—</div>
           </div>
-        </div>
-
-        <div class="row controls">
           <div class="col" style="max-width:160px">
             <label class="muted">Start time (s)</label>
             <input id="start" type="number" min="0" step="1" value="0" />
           </div>
-          <button id="btnPlayAuto" title="Use /api/media/auto (direct stream if native, otherwise transcode)">Play (Auto)</button>
+        </div>
+
+        <div class="row controls" style="margin-top:4px">
+          <button id="btnPlayAuto" title="Use /api/media/auto?id=... (direct if native, otherwise transcode)">Play (Auto)</button>
           <button id="btnForceTranscode" title="Force /api/media/transcode at 720p/3Mbps">Force Transcode</button>
+          <button id="btnDirectStream" title="Direct /api/media/stream (Range)">Direct Stream</button>
           <button id="btnStop">Stop</button>
-          <a id="rawLink" class="pill" href="#" target="_blank" rel="noopener">Open stream in new tab</a>
+          <a id="rawLink" class="pill" href="#" target="_blank" rel="noopener">Open in new tab</a>
         </div>
 
         <div class="row">
@@ -94,7 +108,7 @@
         </div>
       </div>
       <footer>
-        Using: <code>/api/media/auto</code> or <code>/api/media/transcode</code> from your <code>media.py</code>.
+        Using: <code>/api/media/auto?id=…</code>, <code>/api/media/transcode?id=…</code>, <code>/api/media/stream?id=…</code>.
       </footer>
     </section>
   </main>
@@ -104,105 +118,208 @@
     const filterEl = document.getElementById('filter');
     const player = document.getElementById('player');
     const selectedEl = document.getElementById('selected');
+    const selectedPathEl = document.getElementById('selectedPath');
     const urlEl = document.getElementById('url');
     const btnPlayAuto = document.getElementById('btnPlayAuto');
     const btnForce = document.getElementById('btnForceTranscode');
+    const btnDirect = document.getElementById('btnDirectStream');
     const btnStop = document.getElementById('btnStop');
     const rawLink = document.getElementById('rawLink');
     const countEl = document.getElementById('count');
     const startEl = document.getElementById('start');
-
-    let allFiles = [];
-    let selectedPath = null;
-
-    // Fetch the indexed file list from your FastAPI backend
-    async function loadFiles() {
-      const res = await fetch('/api/media/path/list');
+    const dirInput = document.getElementById('dirInput');
+    const btnAddDir = document.getElementById('btnAddDir');
+    const btnReload = document.getElementById('btnReload');
+  
+    // === NEW: simple modal UI for server-side browsing ===
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.5); z-index:1000;
+    `;
+    modal.innerHTML = `
+      <div style="width:720px; max-width:95vw; background:#161a22; border:1px solid #222832; border-radius:12px; overflow:hidden;">
+        <div style="padding:12px 14px; border-bottom:1px solid #222832; display:flex; align-items:center; gap:8px;">
+          <strong>Browse server</strong>
+          <span id="svCur" class="urlbar" style="margin-left:auto; font-size:12px; color:#9aa3b2;">—</span>
+        </div>
+        <div style="padding:12px 14px;">
+          <div id="svCrumbs" class="muted" style="margin-bottom:8px; display:flex; flex-wrap:wrap; gap:6px;"></div>
+          <div id="svList" style="max-height:50vh; overflow:auto; border:1px solid #202632; border-radius:8px;"></div>
+          <div style="margin-top:10px; display:flex; gap:8px; justify-content:flex-end;">
+            <button id="svChoose">Choose this folder</button>
+            <button id="svClose" style="background:#253044; color:#cfd6e4;">Close</button>
+          </div>
+          <div class="hint" style="margin-top:6px;">Adds the current folder to the allowlist and triggers a light scan.</div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const svCur = modal.querySelector('#svCur');
+    const svCrumbs = modal.querySelector('#svCrumbs');
+    const svList = modal.querySelector('#svList');
+    const svChoose = modal.querySelector('#svChoose');
+    const svClose = modal.querySelector('#svClose');
+    
+    let allItems = [];
+    let selected = null;
+    
+    // Simple state for server browser
+    let browsePath = null;
+    
+    async function loadItems() {
+      const res = await fetch('/api/media/item/list?limit=10000');
+      if (!res.ok) { alert('Failed to load items.'); return; }
       const data = await res.json();
-      allFiles = (data || []).sort((a, b) => a.localeCompare(b));
-      countEl.textContent = allFiles.length.toString();
+      allItems = (data || []).sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+      countEl.textContent = allItems.length.toString();
       renderList();
     }
-
-    // Render the left list with optional filter
+  
     function renderList() {
       const q = (filterEl.value || '').toLowerCase();
       listEl.innerHTML = '';
-      allFiles
-        .filter(p => p.toLowerCase().includes(q))
-        .forEach(p => {
+      allItems
+        .filter(x => (x.name || '').toLowerCase().includes(q) || (x.abs_path || '').toLowerCase().includes(q))
+        .forEach(item => {
           const div = document.createElement('div');
-          div.className = 'item' + (p === selectedPath ? ' active' : '');
-          div.textContent = p;
-          div.title = p;
+          div.className = 'item' + (selected && selected.id === item.id ? ' active' : '');
           div.tabIndex = 0;
           div.role = 'option';
-          div.addEventListener('click', () => selectPath(p));
-          div.addEventListener('keydown', (ev) => {
-            if (ev.key === 'Enter') { selectPath(p); }
-          });
+          div.dataset.id = item.id;
+        
+          const name = document.createElement('div'); name.className='name'; name.textContent=item.name||'(unnamed)';
+          const path = document.createElement('div'); path.className='path'; path.textContent=item.abs_path||'';
+        
+          div.appendChild(name); div.appendChild(path);
+          div.addEventListener('click', () => selectItem(item));
+          div.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ selectItem(item); }});
           listEl.appendChild(div);
         });
     }
-
-    function selectPath(p) {
-      selectedPath = p;
-      selectedEl.textContent = p || '—';
+  
+    function selectItem(item){
+      selected = item;
+      selectedEl.textContent = item ? `${item.name} (id=${item.id})` : '—';
+      selectedPathEl.textContent = item?.abs_path || '—';
       urlEl.textContent = '—';
       rawLink.href = '#';
-      // Update active class
-      [...listEl.children].forEach(c => c.classList.toggle('active', c.textContent === p));
+      [...listEl.children].forEach(c=>c.classList.toggle('active', Number(c.dataset.id)===item.id));
     }
-
-    // Build URLs to your endpoints
-    function buildAutoUrl() {
-      if (!selectedPath) return null;
-      const encoded = encodeURIComponent(selectedPath);
-      const start = Number(startEl.value || 0);
-      // /media/auto ignores start time by design (since it may direct-stream),
-      // but we can append &start for your transcode route if you later wire it through.
-      return `/api/media/auto?path=${encoded}${start > 0 ? `&start=${start}` : ''}`;
+  
+    function buildAutoUrl(){
+      if(!selected) return null;
+      const start = Number(startEl.value||0);
+      return `/api/media/auto?id=${selected.id}${start>0?`&start=${start}`:''}`;
     }
-
-    function buildTranscodeUrl() {
-      if (!selectedPath) return null;
-      const encoded = encodeURIComponent(selectedPath);
-      const start = Number(startEl.value || 0);
-      // Match your defaults: height=720, v_bitrate=3000k, a_bitrate=128k
-      return `/api/media/transcode?path=${encoded}&height=720&v_bitrate=3000k&a_bitrate=128k${start > 0 ? `&start=${start}` : ''}`;
+    function buildTranscodeUrl(){
+      if(!selected) return null;
+      const start = Number(startEl.value||0);
+      return `/api/media/transcode?id=${selected.id}&height=720&v_bitrate=3000k&a_bitrate=128k${start>0?`&start=${start}`:''}`;
     }
-
-    // Wire up controls
-    btnPlayAuto.addEventListener('click', () => {
-      const url = buildAutoUrl();
-      if (!url) return alert('Pick a file on the left first.');
-      player.src = url;
-      player.play().catch(()=>{});
-      urlEl.textContent = url;
-      rawLink.href = url;
+    function buildStreamUrl(){
+      if(!selected) return null;
+      return `/api/media/stream?id=${selected.id}`;
+    }
+  
+    btnPlayAuto.addEventListener('click', ()=>{
+      const url = buildAutoUrl(); if(!url) return alert('Pick an item first.');
+      player.src = url; player.play().catch(()=>{}); urlEl.textContent=url; rawLink.href=url;
     });
-
-    btnForce.addEventListener('click', () => {
-      const url = buildTranscodeUrl();
-      if (!url) return alert('Pick a file on the left first.');
-      player.src = url;
-      player.play().catch(()=>{});
-      urlEl.textContent = url;
-      rawLink.href = url;
+    btnForce.addEventListener('click', ()=>{
+      const url = buildTranscodeUrl(); if(!url) return alert('Pick an item first.');
+      player.src = url; player.play().catch(()=>{}); urlEl.textContent=url; rawLink.href=url;
     });
-
-    btnStop.addEventListener('click', () => {
-      player.pause();
-      player.removeAttribute('src'); // drop reference to stop network
-      player.load();
-      urlEl.textContent = '—';
-      rawLink.href = '#';
+    btnDirect.addEventListener('click', ()=>{
+      const url = buildStreamUrl(); if(!url) return alert('Pick an item first.');
+      player.src = url; player.play().catch(()=>{}); urlEl.textContent=url; rawLink.href=url;
     });
-
+    btnStop.addEventListener('click', ()=>{
+      player.pause(); player.removeAttribute('src'); player.load(); urlEl.textContent='—'; rawLink.href='#';
+    });
     filterEl.addEventListener('input', renderList);
-
-    // Kick things off
-    loadFiles();
+  
+    // Existing add by typing path
+    btnAddDir.addEventListener('click', async ()=>{
+      const p = (dirInput.value||'').trim(); if(!p) return;
+      const res = await fetch(`/api/media/allowed-dirs?path=${encodeURIComponent(p)}`, {method:'POST'});
+      if(!res.ok){ alert(`Failed to add dir:\n${await res.text()}`); return; }
+      dirInput.value=''; await loadItems();
+    });
+  
+    btnReload.addEventListener('click', loadItems);
+  
+    // === NEW: Browse server button just before "Add" ===
+    const browseBtn = document.createElement('button');
+    browseBtn.textContent = 'Browse server…';
+    browseBtn.title = 'Open server-side folder picker';
+    btnAddDir.parentElement.insertBefore(browseBtn, btnAddDir);
+    browseBtn.addEventListener('click', openBrowse);
+  
+    async function openBrowse(){
+      // Start at first available root
+      const res = await fetch('/api/media/fs/roots');
+      if(!res.ok){ alert('Could not load server roots'); return; }
+      const roots = await res.json();
+      if(!roots || roots.length===0){ alert('No server roots available.'); return; }
+      browsePath = roots[0];
+      await renderBrowser();
+      modal.style.display = 'flex';
+    }
+  
+    async function renderBrowser(){
+      svCur.textContent = browsePath || '—';
+      svCrumbs.innerHTML = '';
+      svList.innerHTML = '';
+    
+      // Breadcrumbs
+      try{
+        const data = await (await fetch(`/api/media/fs/list?path=${encodeURIComponent(browsePath)}`)).json();
+        // crumbs
+        svCrumbs.innerHTML = '';
+        (data.breadcrumbs||[]).forEach((c, idx, arr)=>{
+          const a = document.createElement('a');
+          a.href="#"; a.textContent = (idx===0 && c==='/') ? '/' : c.split('/').pop() || '/';
+          a.className='pill'; a.style.textDecoration='none';
+          a.addEventListener('click', async (e)=>{ e.preventDefault(); browsePath = c; await renderBrowser(); });
+          svCrumbs.appendChild(a);
+          if (idx < arr.length-1){
+            const sep = document.createElement('span'); sep.textContent = ' / '; sep.className='muted'; sep.style.margin='0 4px';
+            svCrumbs.appendChild(sep);
+          }
+        });
+      
+        // list of subdirs
+        (data.dirs||[]).forEach(d=>{
+          const row = document.createElement('div');
+          row.className='item';
+          row.style.borderBottom='1px solid #202632';
+          row.textContent = d.name || d.path;
+          row.title = d.path;
+          row.tabIndex=0;
+          row.addEventListener('click', async ()=>{ browsePath = d.path; await renderBrowser(); });
+          row.addEventListener('keydown', async (ev)=>{ if(ev.key==='Enter'){ browsePath = d.path; await renderBrowser(); }});
+          svList.appendChild(row);
+        });
+      
+        // choose current
+        svChoose.onclick = async ()=>{
+          const res = await fetch(`/api/media/allowed-dirs?path=${encodeURIComponent(browsePath)}`, {method:'POST'});
+          if(!res.ok){ alert(`Failed to add dir:\n${await res.text()}`); return; }
+          modal.style.display='none';
+          await loadItems();
+        };
+      
+      }catch(err){
+        alert('Error loading folder list.'); console.error(err);
+      }
+    }
+  
+    svClose.addEventListener('click', ()=>{ modal.style.display='none'; });
+  
+    // Start
+    loadItems();
   </script>
+
 </body>
 </html>

@@ -14,8 +14,20 @@ from starlette.staticfiles import StaticFiles
 
 # Import routers (the logic) from the routers package
 from .routers import media_router
+# Import the DB init function
+from backend.db import init_db
 
 app = FastAPI(title="Mini Local Plex")
+
+# --- Database initialization -------------------------------------------------
+@app.on_event("startup")
+def startup_event():
+    """
+    Ensures the SQLite database and schema exist on startup.
+    Runs backend/sql/init.sql automatically.
+    """
+    init_db()
+    print("✅ Database initialized.")
 
 # --- Static files (serve /static and / -> index.html) -------------------------
 BASE_DIR = Path(__file__).resolve().parents[1]     # project/
