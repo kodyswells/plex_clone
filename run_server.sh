@@ -8,6 +8,15 @@
 # Usage: ./run_server.sh [PORT]
 # ------------------------------------------------------------
 
-PORT=${1:-8000}
+PORT=${1:-8080}
+RELOAD_FLAG=$2
 
-uvicorn backend.main:app --host 0.0.0.0 --port $PORT --reload
+if [[ "$RELOAD_FLAG" == "reload" ]]; then
+    RELOAD="--reload"
+    echo "Starting server with auto-reload on port $PORT..."
+else
+    RELOAD=""
+    echo "Starting server on port $PORT..."
+fi
+
+uvicorn backend.main:app --host 0.0.0.0 --port $PORT $RELOAD
